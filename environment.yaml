@@ -1,0 +1,42 @@
+name: scope
+channels:
+  - nvidia
+  - pytorch
+  - pyg
+  - conda-forge
+dependencies:
+  - python=3.10
+  # ----- core deep-learning stack -----
+  - pytorch>=2.1
+  - pytorch-cuda>=11.8
+  - pyg=2.5                  # torch-geometric for GATConv
+  # ----- numerical stack -----
+  - numpy
+  - scipy
+  - scikit-learn>=1.3
+  - pandas
+  - h5py
+  - tqdm
+  # ----- single-cell tooling -----
+  - anndata>=0.10
+  - scanpy>=1.10
+  - leidenalg
+  - umap-learn
+  # ----- downstream-only utilities -----
+  - matplotlib            # KM curves, forest plots
+  - pip
+  - pip:
+      # ----- preprocessing foundation models -----
+      - timm                       # H0-mini ViT (histology)
+      - huggingface_hub            # HF_TOKEN-gated model download
+      - pillow                     # PNG/TIFF I/O
+      - tifffile                   # instance-segmentation TIFFs
+      - novae                      # NOVAE foundation model (transcriptomics)
+      # ----- downstream analysis -----
+      - lifelines>=0.27            # Cox, log-rank, C-index, RMST
+      - scvi-tools>=1.0            # scANVI reference mapping
+      - squidpy>=1.4               # neighbourhood enrichment for niche refinement
+
+# Optional add-ons (install only when needed)
+# ----- functional analysis on downstream embeddings -----
+#   pip install decoupler-py pyucell commot
