@@ -24,25 +24,6 @@ pip install -e .
 export HF_TOKEN=hf_xxxxxxxx           # accept the H0-mini licence first
 ```
 
-## Histology aggregation modes
-
-`preprocess_histology(..., mode=...)` exposes three ways to turn the H0-mini
-ViT output into one 768-dim vector per cell:
-
-| `mode` | What happens | When to use |
-|---|---|---|
-| `"resize56"`        | Crop 56x56 px around the centroid, bilinear-resize to 224x224, run the ViT, take the **CLS token**. | The cell occupies most of the receptive field; you want the model's holistic summary of the cell. |
-| `"gaussian_input"`  | Crop 224x224 px, multiply pixel values by a 2D Gaussian centred on the cell (edges decay to 0), run the ViT, take the **mean of the 256 patch tokens**. | **Default.** Works without segmentation; centred cell dominates the receptive field while preserving local tissue context. |
-| `"mask_token"`      | Crop 224x224 px, run the ViT unchanged, then take a weighted sum over the patch tokens where the weights are the per-token fraction of pixels labelled as the target cell in an instance segmentation mask. | You already have a segmentation. Pixel-accurate cell footprint. |
-
-## Spatial graph
-
-Cells are connected by a 2D **Delaunay triangulation** over their image-pixel
-centroids. We drop the longest 1% of edges (`max_edge_percentile=99`) to
-remove convex-hull "ghost" edges that bridge cells on opposite sides of the
-slide. The resulting graph drives both the GAT layers and the cross-attention
-distance bias.
-
 ## Quick start
 
 ```python
@@ -60,7 +41,7 @@ from scope import (
     preprocess_histology, preprocess_transcriptomics,
 )
 
-# ---- CONFIG -- everything you might want to tweak lives here -------------- #
+
 HISTO_CHECKPOINT = "bioptimus/H0-mini"          # any timm-loadable HF ViT
 RNA_CHECKPOINT   = "MICS-Lab/novae-human-0"     # any NOVAE checkpoint
 HF_TOKEN         = None                         # None -> use $HF_TOKEN env
@@ -75,9 +56,7 @@ EPOCHS, BATCH_SIZE, NUM_CLUSTERS = 200, 1024, 17
 W_ALIGN, W_RECON, W_CLUSTER      = 1.0, 10.0, 5.0
 
 # ---- 1. Load raw spatial transcriptomics + the H&E centroids -------------- #
-# obsm['spatial'] holds 2-D centroids in *image-pixel* coordinates -- the same
-# frame the H&E TIFF lives in, so cropping H&E patches per cell is just a
-# NumPy slice.
+
 adata     = ad.read_h5ad(ADATA_PATH)
 coords_df = pd.DataFrame({
     "cell_id": adata.obs_names.astype(str),
@@ -86,9 +65,7 @@ coords_df = pd.DataFrame({
 })
 
 # ---- 2. Histology -> H0-mini ViT -> (N, 768) ------------------------------ #
-# H0-mini is frozen. The HE_MODE switch picks one of the three aggregation
-# strategies described above. Patches are streamed in `chunk_size` cells at
-# a time so 10^5--10^6 cells fit in <2 GB GPU.
+
 he_feat = preprocess_histology(
     he_image   = HE_PATH,
     coords     = coords_df,
@@ -99,9 +76,7 @@ he_feat = preprocess_histology(
 )
 
 # ---- 3. Transcriptomics -> NOVAE -> (N, 64) ------------------------------- #
-# NOVAE expects raw counts + 2-D coordinates -- it owns its own normalisation
-# (Pearson residuals + quantile scaling), so you must NOT pre-normalise or
-# HVG-filter. Output is the 64-dim NOVAE latent.
+
 rna_feat = preprocess_transcriptomics(
     adata      = adata,
     checkpoint = RNA_CHECKPOINT,
@@ -109,12 +84,7 @@ rna_feat = preprocess_transcriptomics(
 )
 
 # ---- 4. Train SCOPE ------------------------------------------------------- #
-# SCOPE.from_inputs() infers each modality's input dim from the tensor shape,
-# so you never have to keep dimensions in sync. With 2 modalities the
-# adaptive gate is a scalar sigmoid; with >=3 it becomes a softmax simplex.
-# Training mini-batches use Hilbert-curve ordering + 2-hop halo subgraphs
-# so memory scales with batch size, not slide size. A single horizontal tqdm
-# bar shows running loss as postfix.
+
 inputs = {
     "histology":       torch.from_numpy(he_feat),
     "transcriptomics": torch.from_numpy(rna_feat),
@@ -130,9 +100,7 @@ trainer = SCOPETrainer(model, TrainConfig(
 trainer.fit(inputs, coords)
 
 # ---- 5. Inference --------------------------------------------------------- #
-# Mini-batched (Hilbert + halo) inference: scales to whole slides on one GPU.
-# Output is a (N, 256) float32 embedding; feed it to scanpy/leiden/UMAP or
-# any downstream task.
+
 embedding = trainer.inference(inputs, coords)   # (N, 256)
 ```
 
@@ -160,9 +128,7 @@ model = SCOPE(modality_dims=ckpt["modality_dims"])
 model.load_state_dict(ckpt["state_dict"])
 ```
 
-## Reproducibility
 
-Seed is 42 (internal). Reference stack: CUDA 12.1, PyTorch 2.1, PyG 2.5.
 
 ## License
 
